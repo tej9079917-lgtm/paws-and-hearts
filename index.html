@@ -1,531 +1,577 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { initializeApp } from "firebase/app";
-import { getAnalytics } from "firebase/analytics";
-import { 
-  getAuth, 
-  signInWithPopup, 
-  GoogleAuthProvider, 
-  onAuthStateChanged, 
-  signOut,
-  signInWithCustomToken,
-  signInAnonymously
-} from "firebase/auth";
-
-// Environment-aware Firebase configuration
-const fallbackConfig = {
-  apiKey: "AIzaSyCNdm34DewOJl1hMxewPEI6hnrj_oqgRaM",
-  authDomain: "paws-and-hearts-e86e4.firebaseapp.com",
-  projectId: "paws-and-hearts-e86e4",
-  storageBucket: "paws-and-hearts-e86e4.firebasestorage.app",
-  messagingSenderId: "90559838254",
-  appId: "1:90559838254:web:0f0b3fad29f4bd725107bf",
-  measurementId: "G-3BNHP9LTGX"
-};
-
-const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : fallbackConfig;
-
-// Initialize Firebase outside the component
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const googleProvider = new GoogleAuthProvider();
-const analytics = typeof window !== 'undefined' && typeof __firebase_config === 'undefined' ? getAnalytics(app) : null;
-
-// --- SVG Icons ---
-const PawIcon = ({ className = "w-6 h-6" }) => (
-  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className={className}>
-    <path d="M12 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm-5 3c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm10 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm-5 6c-3.3 0-6 2.7-6 6v3h12v-3c0-3.3-2.7-6-6-6zm-7-2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm14 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z" />
-  </svg>
-);
-
-const MessageIcon = ({ className = "w-6 h-6" }) => (
-  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 01-2.555-.337A5.972 5.972 0 015.41 20.97a5.969 5.969 0 01-.474-.065 4.48 4.48 0 00.978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25z" />
-  </svg>
-);
-
-const CloseIcon = ({ className = "w-6 h-6" }) => (
-  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-  </svg>
-);
-
-const SendIcon = ({ className = "w-6 h-6" }) => (
-  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
-  </svg>
-);
-
-// --- Mock Data ---
-const adoptableDogs = [
-  {
-    id: 1,
-    name: "Buddy",
-    breed: "Golden Retriever Mix",
-    age: "2 years",
-    image: "https://images.unsplash.com/photo-1552053831-71594a27632d?auto=format&fit=crop&w=500&q=80",
-    description: "Friendly, energetic, and loves to play fetch. Great with kids!"
-  },
-  {
-    id: 2,
-    name: "Luna",
-    breed: "Husky",
-    age: "1 year",
-    image: "https://images.unsplash.com/photo-1605568427561-40dd23c2acea?auto=format&fit=crop&w=500&q=80",
-    description: "A beautiful, vocal girl who needs an active family and a big yard."
-  },
-  {
-    id: 3,
-    name: "Max",
-    breed: "Beagle",
-    age: "4 years",
-    image: "https://images.unsplash.com/photo-1537151608804-ea2f142b406b?auto=format&fit=crop&w=500&q=80",
-    description: "Calm, sweet, and loves sniffing around on long, slow walks."
-  }
-];
-
-const initialMissingDogs = [
-  {
-    id: 101,
-    name: "Charlie",
-    breed: "Labrador",
-    lastSeen: "Central Park, NY",
-    image: "https://images.unsplash.com/photo-1591768575198-88dac53fbd0a?auto=format&fit=crop&w=500&q=80",
-    owner: "Jane Doe"
-  }
-];
-
-// --- Chatbot Component ---
-const Chatbot = () => {
-  const [isOpen, setIsOpen] = useState(false);
-  const [messages, setMessages] = useState([
-    { role: 'model', text: "Hi! I'm PawsBot 🐾. I'm an expert in dog breeds, cross-breeding genetics, and canine health. Ask me about healthy/unhealthy foods, behavior tips, or finding local pet shops!" }
-  ]);
-  const [inputText, setInputText] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const messagesEndRef = useRef(null);
-
-  const quickPrompts = [
-    "Breed cross-breeding info",
-    "Toxic foods list",
-    "Healthy puppy diet",
-    "Aggressive behavior tips",
-    "Find nearby pet shops"
-  ];
-
-  // System provides API key dynamically
-  const apiKey = ""; 
-
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
-
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages, isOpen]);
-
-  const formatText = (text) => {
-    const boldRegex = /\*\*(.*?)\*\*/g;
-    const parts = text.split(boldRegex);
-    return parts.map((part, index) => {
-      if (index % 2 === 1) return <strong key={index} className="font-bold">{part}</strong>;
-      return <span key={index}>{part}</span>;
-    });
-  };
-
-  const handleSendTrigger = async (textToProcess) => {
-    if (!textToProcess.trim() || isLoading) return;
-    const userText = textToProcess.trim();
-    setInputText('');
-    const newMessages = [...messages, { role: 'user', text: userText }];
-    setMessages(newMessages);
-    setIsLoading(true);
-
-    try {
-      const systemPrompt = `You are PawsBot, the lead canine expert for 'Paws & Hearts Rescue'. 
-      Expertise Areas:
-      1. Breed Knowledge: You can explain what happens when crossing breeds.
-      2. Health & Nutrition: Explicitly list HEALTHY foods and UNHEALTHY/TOXIC foods.
-      3. Behavior & Training: Explain body language and precautions for dealing with nervous dogs.
-      4. Local Search: Find pet shops, vets, and adoption centers when a location is provided.
-      Always be encouraging but professional. Always suggest consulting a vet for medical emergencies.`;
-      
-      const apiContents = newMessages.map(msg => ({
-        role: msg.role === 'user' ? 'user' : 'model',
-        parts: [{ text: msg.text }]
-      }));
-
-      const payload = {
-        contents: apiContents,
-        systemInstruction: { parts: [{ text: systemPrompt }] },
-        tools: [{ google_search: {} }] 
-      };
-
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
-      const delays = [1000, 2000, 4000, 8000, 16000];
-      
-      let response;
-      let data;
-      let success = false;
-
-      // Exponential backoff logic
-      for (let i = 0; i <= delays.length; i++) {
-        try {
-          response = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-          });
-          
-          if (response.ok) {
-            data = await response.json();
-            success = true;
-            break;
-          } else if (i < delays.length) {
-            await new Promise(res => setTimeout(res, delays[i]));
-          }
-        } catch (err) {
-          if (i === delays.length) {
-            throw err;
-          } else {
-            await new Promise(res => setTimeout(res, delays[i]));
-          }
-        }
-      }
-
-      if (!success || !data) {
-        throw new Error("Failed to fetch after retries");
-      }
-
-      const botReply = data.candidates?.[0]?.content?.parts?.[0]?.text || "I'm having a bit of trouble finding that info. Can you ask in a different way?";
-      setMessages(prev => [...prev, { role: 'model', text: botReply }]);
-    } catch (error) {
-      setMessages(prev => [...prev, { role: 'model', text: "I'm currently experiencing a connection error. Please try asking again in a moment." }]);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  return (
-    <div className="fixed bottom-4 right-4 z-50 flex flex-col items-end">
-      {isOpen && (
-        <div className="bg-white rounded-2xl shadow-2xl border border-gray-200 w-[350px] max-w-[calc(100vw-2rem)] h-[560px] mb-4 flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom-4">
-          <div className="bg-amber-600 text-white p-4 flex justify-between items-center">
-            <div className="flex items-center gap-2">
-              <PawIcon className="w-5 h-5" />
-              <h3 className="font-semibold">PawsBot Expert</h3>
-            </div>
-            <button onClick={() => setIsOpen(false)} className="hover:opacity-75 transition-opacity"><CloseIcon /></button>
-          </div>
-          <div className="flex-1 overflow-y-auto p-4 bg-amber-50/30 flex flex-col gap-3">
-            {messages.map((msg, idx) => (
-              <div key={idx} className={`max-w-[85%] p-3 rounded-2xl text-sm ${
-                msg.role === 'user' ? 'bg-amber-600 text-white self-end' : 'bg-white text-gray-800 border border-gray-100 self-start shadow-sm'
-              }`}>
-                {formatText(msg.text)}
-              </div>
-            ))}
-            {isLoading && <div className="text-xs text-gray-400 italic">PawsBot is fetching information...</div>}
-            <div ref={messagesEndRef} />
-          </div>
-          {!isLoading && messages.length < 5 && (
-            <div className="px-3 py-2 bg-white flex flex-wrap gap-1.5 border-t border-gray-50">
-              {quickPrompts.map((p, i) => (
-                <button key={i} onClick={() => handleSendTrigger(p)} className="text-[10px] bg-gray-100 px-2 py-1 rounded-full hover:bg-amber-100 transition-colors">
-                  {p}
-                </button>
-              ))}
-            </div>
-          )}
-          <form onSubmit={(e) => { e.preventDefault(); handleSendTrigger(inputText); }} className="p-3 border-t bg-white">
-            <div className="relative">
-              <input value={inputText} onChange={(e) => setInputText(e.target.value)} placeholder="Ask about breeds or food..." className="w-full bg-gray-100 rounded-full py-2 pl-4 pr-10 text-sm focus:ring-2 focus:ring-amber-500 outline-none" />
-              <button type="submit" className="absolute right-1 top-1 p-1.5 bg-amber-600 text-white rounded-full hover:bg-amber-700 transition-colors"><SendIcon className="w-4 h-4" /></button>
-            </div>
-          </form>
-        </div>
-      )}
-      <button onClick={() => setIsOpen(!isOpen)} className="bg-amber-600 text-white p-4 rounded-full shadow-xl hover:scale-105 transition-transform flex items-center justify-center">
-        {isOpen ? <CloseIcon className="w-7 h-7" /> : <MessageIcon className="w-7 h-7" />}
-      </button>
-    </div>
-  );
-};
-
-// --- Main App Component ---
-export default function App() {
-  const [searchTerm, setSearchTerm] = useState('');
-  const [user, setUser] = useState(null);
-  const [missingDogs, setMissingDogs] = useState(initialMissingDogs);
-  const [showMissingModal, setShowMissingModal] = useState(false);
-  const [newMissing, setNewMissing] = useState({ name: '', breed: '', lastSeen: '' });
-
-  // Handle environment authentication securely
-  useEffect(() => {
-    const initAuth = async () => {
-      try {
-        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-          await signInWithCustomToken(auth, __initial_auth_token);
-        } else {
-          await signInAnonymously(auth);
-        }
-      } catch (err) {
-        console.warn("Silent auth failed, relying on user login", err);
-      }
-    };
-    
-    initAuth();
-    
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
-    });
-    
-    return () => unsubscribe();
-  }, []);
-
-  const handleLogin = async () => {
-    try {
-      await signInWithPopup(auth, googleProvider);
-    } catch (error) {
-      console.error("Login failed:", error);
-    }
-  };
-
-  const handleLogout = () => signOut(auth);
-
-  const handleReportMissing = (e) => {
-    e.preventDefault();
-    // Use fallback ID if anonymous to still allow functionality during preview
-    const displayName = user?.displayName || `User_${user?.uid?.substring(0,4) || 'Anon'}`;
-    
-    const dog = {
-      ...newMissing,
-      id: Date.now(),
-      image: "https://images.unsplash.com/photo-1583511655857-d19b40a7a54e?auto=format&fit=crop&w=500&q=80",
-      owner: displayName
-    };
-    
-    setMissingDogs([dog, ...missingDogs]);
-    setNewMissing({ name: '', breed: '', lastSeen: '' });
-    setShowMissingModal(false);
-  };
-
-  const filteredDogs = adoptableDogs.filter(dog => 
-    dog.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    dog.breed.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
-  return (
-    <div className="min-h-screen bg-gray-50 text-gray-800 font-sans">
-      
-      {/* Navigation */}
-      <nav className="bg-white shadow-sm sticky top-0 z-40">
-        <div className="max-w-6xl mx-auto px-4 py-4 flex justify-between items-center">
-          <div className="flex items-center gap-2 text-amber-600">
-            <PawIcon className="w-8 h-8" />
-            <span className="font-bold text-2xl tracking-tight hidden sm:inline">Paws & Hearts</span>
-          </div>
-          <div className="flex gap-4 items-center">
-            <a href="#adopt" className="text-gray-600 hover:text-amber-600 text-sm font-medium transition-colors">Adopt</a>
-            <a href="#missing" className="text-gray-600 hover:text-amber-600 text-sm font-medium transition-colors">Missing</a>
-            {user && !user.isAnonymous ? (
-              <div className="flex items-center gap-3">
-                {user.photoURL && <img src={user.photoURL} className="w-8 h-8 rounded-full border border-amber-200" alt="profile" />}
-                <button onClick={handleLogout} className="text-xs text-gray-500 hover:text-red-500 transition-colors">Sign Out</button>
-              </div>
-            ) : (
-              <button onClick={handleLogin} className="bg-amber-600 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-amber-700 transition-colors">
-                <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/action/google.svg" className="w-4 h-4 bg-white rounded-sm p-0.5" alt="google" />
-                Sign In
-              </button>
-            )}
-          </div>
-        </div>
-      </nav>
-
-      {/* Hero Section */}
-      <header className="bg-amber-700 text-white relative py-20 overflow-hidden">
-        <div className="absolute inset-0 opacity-20"><img src="https://images.unsplash.com/photo-1541599540903-216a46cc1ad6?auto=format&fit=crop&w=1600&q=80" className="w-full h-full object-cover" alt="pattern" /></div>
-        <div className="relative z-10 max-w-4xl mx-auto px-4 text-center">
-          <h1 className="text-5xl font-extrabold mb-6">Find Your New Best Friend</h1>
-          <p className="text-xl text-amber-50 mb-8">Securely login to start the adoption process or help the community find missing pets.</p>
-          {(!user || user.isAnonymous) && (
-            <button onClick={handleLogin} className="bg-white text-amber-700 px-8 py-3 rounded-full font-bold shadow-xl hover:bg-amber-50 transition-all scale-100 hover:scale-105">
-              Join Our Community to Help
-            </button>
-          )}
-        </div>
-      </header>
-
-      <main className="max-w-6xl mx-auto px-4 py-16 space-y-32">
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Paws & Hearts Rescue</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Add basic animations that were handled by 'animate-in' classes in React */
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        @keyframes zoomIn { from { transform: scale(0.95); opacity: 0; } to { transform: scale(1); opacity: 1; } }
         
-        {/* Adopt Section */}
+        .fade-in { animation: fadeIn 0.2s ease-out forwards; }
+        .slide-up { animation: slideUp 0.3s ease-out forwards; }
+        .zoom-in { animation: zoomIn 0.2s ease-out forwards; }
+    </style>
+</head>
+<body class="min-h-screen bg-gray-50 text-gray-800 font-sans overflow-x-hidden">
+
+    <!-- Navigation -->
+    <nav class="bg-white shadow-sm sticky top-0 z-40">
+        <div class="max-w-6xl mx-auto px-4 py-4 flex justify-between items-center">
+            <div class="flex items-center gap-2 text-amber-600">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-8 h-8">
+                    <path d="M12 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm-5 3c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm10 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm-5 6c-3.3 0-6 2.7-6 6v3h12v-3c0-3.3-2.7-6-6-6zm-7-2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm14 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z" />
+                </svg>
+                <span class="font-bold text-2xl tracking-tight hidden sm:inline">Paws & Hearts</span>
+            </div>
+            <div class="flex gap-4 items-center" id="nav-actions">
+                <a href="#adopt" class="text-gray-600 hover:text-amber-600 text-sm font-medium transition-colors">Adopt</a>
+                <a href="#missing" class="text-gray-600 hover:text-amber-600 text-sm font-medium transition-colors">Missing</a>
+                <!-- Auth UI injected here -->
+                <div id="auth-container"></div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <header class="bg-amber-700 text-white relative py-20 overflow-hidden">
+        <div class="absolute inset-0 opacity-20"><img src="https://images.unsplash.com/photo-1541599540903-216a46cc1ad6?auto=format&fit=crop&w=1600&q=80" class="w-full h-full object-cover" alt="pattern" /></div>
+        <div class="relative z-10 max-w-4xl mx-auto px-4 text-center">
+            <h1 class="text-5xl font-extrabold mb-6">Find Your New Best Friend</h1>
+            <p class="text-xl text-amber-50 mb-8">Securely login to start the adoption process or help the community find missing pets.</p>
+            <div id="hero-auth-action"></div>
+        </div>
+    </header>
+
+    <main class="max-w-6xl mx-auto px-4 py-16 space-y-32">
+        
+        <!-- Adopt Section -->
         <section id="adopt">
-          <div className="flex flex-col md:flex-row justify-between items-end mb-10 gap-6">
-            <div>
-              <h2 className="text-4xl font-bold text-gray-900">Dogs Seeking Homes</h2>
-              <p className="text-gray-500 mt-2">Browse our available rescues and start an application.</p>
-            </div>
-            <input 
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Search breeds..." 
-              className="px-5 py-3 rounded-full border bg-white w-full md:w-80 shadow-sm focus:ring-2 focus:ring-amber-500 outline-none transition-all"
-            />
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            {filteredDogs.map(dog => (
-              <div key={dog.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-lg transition-shadow flex flex-col">
-                <img src={dog.image} className="h-56 w-full object-cover" alt={dog.name} />
-                <div className="p-6 flex flex-col flex-grow">
-                  <div className="flex justify-between items-center mb-1">
-                    <h3 className="text-xl font-bold">{dog.name}</h3>
-                    <span className="text-xs bg-amber-100 text-amber-800 px-2 py-1 rounded-full font-bold">{dog.age}</span>
-                  </div>
-                  <p className="text-amber-600 text-sm font-semibold mb-4">{dog.breed}</p>
-                  <p className="text-gray-600 text-sm line-clamp-2 mb-6 flex-grow">{dog.description}</p>
-                  <button onClick={(!user || user.isAnonymous) ? handleLogin : () => {}} className="w-full py-3 bg-amber-600 text-white rounded-xl font-bold hover:bg-amber-700 transition-colors">
-                    {(user && !user.isAnonymous) ? "Apply to Adopt" : "Login to Adopt"}
-                  </button>
+            <div class="flex flex-col md:flex-row justify-between items-end mb-10 gap-6">
+                <div>
+                    <h2 class="text-4xl font-bold text-gray-900">Dogs Seeking Homes</h2>
+                    <p class="text-gray-500 mt-2">Browse our available rescues and start an application.</p>
                 </div>
-              </div>
-            ))}
-          </div>
+                <input id="search-input" placeholder="Search breeds..." class="px-5 py-3 rounded-full border bg-white w-full md:w-80 shadow-sm focus:ring-2 focus:ring-amber-500 outline-none transition-all" />
+            </div>
+            <div id="adopt-grid" class="grid grid-cols-1 md:grid-cols-3 gap-8">
+                <!-- Dogs injected here -->
+            </div>
         </section>
 
-        {/* Missing Dogs Section */}
-        <section id="missing" className="bg-red-50 rounded-[2.5rem] p-8 md:p-12 relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-32 h-32 bg-red-100 rounded-bl-full opacity-50"></div>
-          <div className="flex flex-col md:flex-row justify-between items-center mb-12 gap-6 relative z-10">
-            <div>
-              <h2 className="text-4xl font-bold text-gray-900">Missing Pets</h2>
-              <p className="text-gray-600 mt-2">Help reunite these furry friends with their families.</p>
+        <!-- Missing Dogs Section -->
+        <section id="missing" class="bg-red-50 rounded-[2.5rem] p-8 md:p-12 relative overflow-hidden">
+            <div class="absolute top-0 right-0 w-32 h-32 bg-red-100 rounded-bl-full opacity-50"></div>
+            <div class="flex flex-col md:flex-row justify-between items-center mb-12 gap-6 relative z-10">
+                <div>
+                    <h2 class="text-4xl font-bold text-gray-900">Missing Pets</h2>
+                    <p class="text-gray-600 mt-2">Help reunite these furry friends with their families.</p>
+                </div>
+                <div id="missing-action-container"></div>
             </div>
-            {user ? (
-              <button onClick={() => setShowMissingModal(true)} className="bg-red-600 text-white px-6 py-3 rounded-full font-bold hover:bg-red-700 transition-all shadow-lg flex items-center gap-2">
-                <PawIcon className="w-5 h-5" /> Report Missing Dog
-              </button>
-            ) : (
-              <button onClick={handleLogin} className="bg-white text-red-600 border border-red-200 px-6 py-3 rounded-full font-bold hover:bg-red-50 transition-all shadow-md">
-                Login to Report a Lost Dog
-              </button>
-            )}
-          </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 relative z-10">
-            {missingDogs.map(dog => (
-              <div key={dog.id} className="bg-white p-4 rounded-3xl shadow-sm border border-red-100 hover:scale-[1.02] transition-transform">
-                <img src={dog.image} className="w-full h-40 object-cover rounded-2xl mb-4" alt="missing" />
-                <h4 className="font-bold text-lg">{dog.name}</h4>
-                <p className="text-xs text-red-500 font-bold uppercase tracking-widest mb-2">Lost: {dog.breed}</p>
-                <p className="text-sm text-gray-500 flex items-center gap-1 mb-1">📍 {dog.lastSeen}</p>
-                <p className="text-[10px] text-gray-400">Reporter: {dog.owner}</p>
-              </div>
-            ))}
-          </div>
+            <div id="missing-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 relative z-10">
+                <!-- Missing dogs injected here -->
+            </div>
         </section>
 
-        {/* Breed Info Visual Section */}
-        <section className="grid md:grid-cols-2 gap-12 items-center">
-          <div className="space-y-6">
-            <h2 className="text-4xl font-bold">Breed Wisdom & Care</h2>
-            <p className="text-gray-600 leading-relaxed text-lg">
-              Understanding your dog's genetics and nutritional needs is key to a long, happy life. 
-              Our AI expert, <strong className="text-amber-700">PawsBot</strong>, is specifically trained to help with:
-            </p>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="p-4 bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
-                <span className="text-2xl">🧬</span>
-                <h5 className="font-bold mt-2">Cross-Breeding</h5>
-                <p className="text-xs text-gray-400">Learn about hybrid traits.</p>
-              </div>
-              <div className="p-4 bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
-                <span className="text-2xl">🥗</span>
-                <h5 className="font-bold mt-2">Toxic Food Lists</h5>
-                <p className="text-xs text-gray-400">Keep dangerous foods away.</p>
-              </div>
-              <div className="p-4 bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
-                <span className="text-2xl">🧠</span>
-                <h5 className="font-bold mt-2">Behavior Prep</h5>
-                <p className="text-xs text-gray-400">Safety precautions & signs.</p>
-              </div>
-              <div className="p-4 bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
-                <span className="text-2xl">🏠</span>
-                <h5 className="font-bold mt-2">Local Shops</h5>
-                <p className="text-xs text-gray-400">Find vetted supply stores.</p>
-              </div>
+        <!-- Breed Info Visual Section -->
+        <section class="grid md:grid-cols-2 gap-12 items-center">
+            <div class="space-y-6">
+                <h2 class="text-4xl font-bold">Breed Wisdom & Care</h2>
+                <p class="text-gray-600 leading-relaxed text-lg">
+                    Understanding your dog's genetics and nutritional needs is key to a long, happy life. 
+                    Our AI expert, <strong class="text-amber-700">PawsBot</strong>, is specifically trained to help with:
+                </p>
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="p-4 bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
+                        <span class="text-2xl">🧬</span>
+                        <h5 class="font-bold mt-2">Cross-Breeding</h5>
+                        <p class="text-xs text-gray-400">Learn about hybrid traits.</p>
+                    </div>
+                    <div class="p-4 bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
+                        <span class="text-2xl">🥗</span>
+                        <h5 class="font-bold mt-2">Toxic Food Lists</h5>
+                        <p class="text-xs text-gray-400">Keep dangerous foods away.</p>
+                    </div>
+                    <div class="p-4 bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
+                        <span class="text-2xl">🧠</span>
+                        <h5 class="font-bold mt-2">Behavior Prep</h5>
+                        <p class="text-xs text-gray-400">Safety precautions & signs.</p>
+                    </div>
+                    <div class="p-4 bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
+                        <span class="text-2xl">🏠</span>
+                        <h5 class="font-bold mt-2">Local Shops</h5>
+                        <p class="text-xs text-gray-400">Find vetted supply stores.</p>
+                    </div>
+                </div>
             </div>
-          </div>
-          <div className="bg-amber-100 rounded-[3rem] p-4 rotate-2">
-            <img 
-              src="https://images.unsplash.com/photo-1517849845537-4d257902454a?auto=format&fit=crop&w=800&q=80" 
-              className="rounded-[2.5rem] shadow-2xl -rotate-2" 
-              alt="Education dog" 
-            />
-          </div>
+            <div class="bg-amber-100 rounded-[3rem] p-4 rotate-2">
+                <img src="https://images.unsplash.com/photo-1517849845537-4d257902454a?auto=format&fit=crop&w=800&q=80" class="rounded-[2.5rem] shadow-2xl -rotate-2" alt="Education dog" />
+            </div>
         </section>
 
-      </main>
+    </main>
 
-      {/* Missing Dog Modal */}
-      {showMissingModal && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in">
-          <div className="bg-white rounded-[2rem] w-full max-w-md p-8 shadow-2xl animate-in zoom-in-95">
-            <div className="flex justify-between items-center mb-6">
-              <h3 className="text-2xl font-bold">Report Missing Pet</h3>
-              <button onClick={() => setShowMissingModal(false)} className="hover:bg-gray-100 p-2 rounded-full transition-colors"><CloseIcon className="text-gray-400" /></button>
+    <!-- Missing Dog Modal -->
+    <div id="missing-modal" class="hidden fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm fade-in">
+        <div class="bg-white rounded-[2rem] w-full max-w-md p-8 shadow-2xl zoom-in">
+            <div class="flex justify-between items-center mb-6">
+                <h3 class="text-2xl font-bold">Report Missing Pet</h3>
+                <button id="close-modal" class="hover:bg-gray-100 p-2 rounded-full transition-colors">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6 text-gray-400">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
             </div>
-            <form onSubmit={handleReportMissing} className="space-y-4">
-              <div>
-                <label className="text-xs font-bold uppercase text-gray-500 block mb-1 ml-1">Dog's Name</label>
-                <input required value={newMissing.name} onChange={e => setNewMissing({...newMissing, name: e.target.value})} className="w-full px-4 py-3 bg-gray-50 rounded-xl border-none focus:ring-2 focus:ring-red-500 outline-none" placeholder="e.g. Toby" />
-              </div>
-              <div>
-                <label className="text-xs font-bold uppercase text-gray-500 block mb-1 ml-1">Breed</label>
-                <input required value={newMissing.breed} onChange={e => setNewMissing({...newMissing, breed: e.target.value})} className="w-full px-4 py-3 bg-gray-50 rounded-xl border-none focus:ring-2 focus:ring-red-500 outline-none" placeholder="e.g. Beagle" />
-              </div>
-              <div>
-                <label className="text-xs font-bold uppercase text-gray-500 block mb-1 ml-1">Last Seen At</label>
-                <input required value={newMissing.lastSeen} onChange={e => setNewMissing({...newMissing, lastSeen: e.target.value})} className="w-full px-4 py-3 bg-gray-50 rounded-xl border-none focus:ring-2 focus:ring-red-500 outline-none" placeholder="e.g. Near West Park" />
-              </div>
-              <button type="submit" className="w-full py-4 bg-red-600 text-white rounded-xl font-bold text-lg hover:bg-red-700 transition-colors shadow-lg shadow-red-200 mt-4">
-                Post Alert
-              </button>
+            <form id="missing-form" class="space-y-4">
+                <div>
+                    <label class="text-xs font-bold uppercase text-gray-500 block mb-1 ml-1">Dog's Name</label>
+                    <input id="missing-name" required class="w-full px-4 py-3 bg-gray-50 rounded-xl border-none focus:ring-2 focus:ring-red-500 outline-none" placeholder="e.g. Toby" />
+                </div>
+                <div>
+                    <label class="text-xs font-bold uppercase text-gray-500 block mb-1 ml-1">Breed</label>
+                    <input id="missing-breed" required class="w-full px-4 py-3 bg-gray-50 rounded-xl border-none focus:ring-2 focus:ring-red-500 outline-none" placeholder="e.g. Beagle" />
+                </div>
+                <div>
+                    <label class="text-xs font-bold uppercase text-gray-500 block mb-1 ml-1">Last Seen At</label>
+                    <input id="missing-lastseen" required class="w-full px-4 py-3 bg-gray-50 rounded-xl border-none focus:ring-2 focus:ring-red-500 outline-none" placeholder="e.g. Near West Park" />
+                </div>
+                <button type="submit" class="w-full py-4 bg-red-600 text-white rounded-xl font-bold text-lg hover:bg-red-700 transition-colors shadow-lg shadow-red-200 mt-4">
+                    Post Alert
+                </button>
             </form>
-          </div>
         </div>
-      )}
-
-      {/* Footer */}
-      <footer className="bg-gray-900 text-gray-400 py-16">
-        <div className="max-w-6xl mx-auto px-4 grid md:grid-cols-4 gap-12">
-          <div className="col-span-1 md:col-span-2">
-            <div className="flex items-center gap-2 text-white mb-6">
-              <PawIcon className="w-8 h-8" />
-              <span className="font-bold text-2xl">Paws & Hearts</span>
-            </div>
-            <p className="max-w-sm">Saving and rehoming dogs since 2018. We believe every life is precious and every tail deserves to wag in a happy home.</p>
-          </div>
-          <div>
-            <h4 className="text-white font-bold mb-4 uppercase tracking-widest text-xs">Navigation</h4>
-            <ul className="space-y-3 text-sm">
-              <li><a href="#adopt" className="hover:text-amber-500 transition-colors">Available Adoptions</a></li>
-              <li><a href="#missing" className="hover:text-amber-500 transition-colors">Missing Registry</a></li>
-              <li><a href="#" className="hover:text-amber-500 transition-colors">Terms of Service</a></li>
-            </ul>
-          </div>
-          <div>
-            <h4 className="text-white font-bold mb-4 uppercase tracking-widest text-xs">Community</h4>
-            <p className="text-sm">Join 1,200+ other dog lovers receiving our monthly rescue updates.</p>
-            <div className="mt-4 flex gap-2">
-              <input placeholder="Email" className="bg-gray-800 border-none rounded-lg px-3 py-2 text-xs w-full focus:ring-1 focus:ring-amber-500 outline-none text-white" />
-              <button className="bg-amber-600 text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-amber-700 transition-colors">Join</button>
-            </div>
-          </div>
-        </div>
-      </footer>
-
-      {/* Chatbot */}
-      <Chatbot />
     </div>
-  );
-}
+
+    <!-- Footer -->
+    <footer class="bg-gray-900 text-gray-400 py-16">
+        <div class="max-w-6xl mx-auto px-4 grid md:grid-cols-4 gap-12">
+            <div class="col-span-1 md:col-span-2">
+                <div class="flex items-center gap-2 text-white mb-6">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-8 h-8">
+                        <path d="M12 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm-5 3c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm10 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm-5 6c-3.3 0-6 2.7-6 6v3h12v-3c0-3.3-2.7-6-6-6zm-7-2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm14 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z" />
+                    </svg>
+                    <span class="font-bold text-2xl">Paws & Hearts</span>
+                </div>
+                <p class="max-w-sm">Saving and rehoming dogs since 2018. We believe every life is precious and every tail deserves to wag in a happy home.</p>
+            </div>
+            <div>
+                <h4 class="text-white font-bold mb-4 uppercase tracking-widest text-xs">Navigation</h4>
+                <ul class="space-y-3 text-sm">
+                    <li><a href="#adopt" class="hover:text-amber-500 transition-colors">Available Adoptions</a></li>
+                    <li><a href="#missing" class="hover:text-amber-500 transition-colors">Missing Registry</a></li>
+                    <li><a href="#" class="hover:text-amber-500 transition-colors">Terms of Service</a></li>
+                </ul>
+            </div>
+            <div>
+                <h4 class="text-white font-bold mb-4 uppercase tracking-widest text-xs">Community</h4>
+                <p class="text-sm">Join 1,200+ other dog lovers receiving our monthly rescue updates.</p>
+                <div class="mt-4 flex gap-2">
+                    <input placeholder="Email" class="bg-gray-800 border-none rounded-lg px-3 py-2 text-xs w-full focus:ring-1 focus:ring-amber-500 outline-none text-white" />
+                    <button class="bg-amber-600 text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-amber-700 transition-colors">Join</button>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Chatbot Container -->
+    <div class="fixed bottom-4 right-4 z-50 flex flex-col items-end">
+        <div id="chat-window" class="hidden bg-white rounded-2xl shadow-2xl border border-gray-200 w-[350px] max-w-[calc(100vw-2rem)] h-[560px] mb-4 flex flex-col overflow-hidden slide-up">
+            <div class="bg-amber-600 text-white p-4 flex justify-between items-center">
+                <div class="flex items-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5">
+                        <path d="M12 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm-5 3c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm10 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm-5 6c-3.3 0-6 2.7-6 6v3h12v-3c0-3.3-2.7-6-6-6zm-7-2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm14 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z" />
+                    </svg>
+                    <h3 class="font-semibold">PawsBot Expert</h3>
+                </div>
+                <button id="close-chat" class="hover:opacity-75 transition-opacity">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+            
+            <div id="chat-messages" class="flex-1 overflow-y-auto p-4 bg-amber-50/30 flex flex-col gap-3">
+                <!-- Chat messages injected here -->
+            </div>
+            
+            <div id="chat-quick-prompts" class="px-3 py-2 bg-white flex flex-wrap gap-1.5 border-t border-gray-50">
+                <!-- Quick prompts injected here -->
+            </div>
+            
+            <form id="chat-form" class="p-3 border-t bg-white">
+                <div class="relative">
+                    <input id="chat-input" placeholder="Ask about breeds or food..." autocomplete="off" class="w-full bg-gray-100 rounded-full py-2 pl-4 pr-10 text-sm focus:ring-2 focus:ring-amber-500 outline-none" />
+                    <button type="submit" class="absolute right-1 top-1 p-1.5 bg-amber-600 text-white rounded-full hover:bg-amber-700 transition-colors">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
+                        </svg>
+                    </button>
+                </div>
+            </form>
+        </div>
+        <button id="toggle-chat" class="bg-amber-600 text-white p-4 rounded-full shadow-xl hover:scale-105 transition-transform flex items-center justify-center">
+            <svg id="chat-icon-open" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-7 h-7">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 01-2.555-.337A5.972 5.972 0 015.41 20.97a5.969 5.969 0 01-.474-.065 4.48 4.48 0 00.978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25z" />
+            </svg>
+            <svg id="chat-icon-close" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-7 h-7 hidden">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+        </button>
+    </div>
+
+    <!-- Application Script (Replaces React Component Logic) -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+        import { 
+            getAuth, 
+            signInWithPopup, 
+            GoogleAuthProvider, 
+            onAuthStateChanged, 
+            signOut,
+            signInWithCustomToken,
+            signInAnonymously
+        } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+
+        // --- Data & State ---
+        let currentUser = null;
+        let searchTerm = '';
+        const adoptableDogs = [
+            { id: 1, name: "Buddy", breed: "Golden Retriever Mix", age: "2 years", image: "https://images.unsplash.com/photo-1552053831-71594a27632d?auto=format&fit=crop&w=500&q=80", description: "Friendly, energetic, and loves to play fetch. Great with kids!" },
+            { id: 2, name: "Luna", breed: "Husky", age: "1 year", image: "https://images.unsplash.com/photo-1605568427561-40dd23c2acea?auto=format&fit=crop&w=500&q=80", description: "A beautiful, vocal girl who needs an active family and a big yard." },
+            { id: 3, name: "Max", breed: "Beagle", age: "4 years", image: "https://images.unsplash.com/photo-1537151608804-ea2f142b406b?auto=format&fit=crop&w=500&q=80", description: "Calm, sweet, and loves sniffing around on long, slow walks." }
+        ];
+
+        let missingDogs = [
+            { id: 101, name: "Charlie", breed: "Labrador", lastSeen: "Central Park, NY", image: "https://images.unsplash.com/photo-1591768575198-88dac53fbd0a?auto=format&fit=crop&w=500&q=80", owner: "Jane Doe" }
+        ];
+
+        // --- Firebase Setup ---
+        const fallbackConfig = {
+            apiKey: "AIzaSyCNdm34DewOJl1hMxewPEI6hnrj_oqgRaM",
+            authDomain: "paws-and-hearts-e86e4.firebaseapp.com",
+            projectId: "paws-and-hearts-e86e4",
+            storageBucket: "paws-and-hearts-e86e4.firebasestorage.app",
+            messagingSenderId: "90559838254",
+            appId: "1:90559838254:web:0f0b3fad29f4bd725107bf"
+        };
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : fallbackConfig;
+        
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const googleProvider = new GoogleAuthProvider();
+
+        // Environment Authentication logic
+        const initAuth = async () => {
+            try {
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await signInWithCustomToken(auth, __initial_auth_token);
+                } else {
+                    await signInAnonymously(auth);
+                }
+            } catch (err) {
+                console.warn("Silent auth failed", err);
+            }
+        };
+        initAuth();
+
+        onAuthStateChanged(auth, (user) => {
+            currentUser = user;
+            renderAuthUI();
+            renderAdoptGrid();
+        });
+
+        const handleLogin = async () => {
+            try { await signInWithPopup(auth, googleProvider); } 
+            catch (error) { console.error("Login failed:", error); }
+        };
+
+        const handleLogout = () => signOut(auth);
+
+        // --- Rendering Logic ---
+        
+        // Expose login/logout to global scope for inline onclick handlers generated dynamically
+        window.executeLogin = handleLogin;
+        window.executeLogout = handleLogout;
+
+        function renderAuthUI() {
+            const authContainer = document.getElementById('auth-container');
+            const heroActionContainer = document.getElementById('hero-auth-action');
+            const missingActionContainer = document.getElementById('missing-action-container');
+
+            if (currentUser && !currentUser.isAnonymous) {
+                authContainer.innerHTML = `
+                    <div class="flex items-center gap-3">
+                        ${currentUser.photoURL ? `<img src="${currentUser.photoURL}" class="w-8 h-8 rounded-full border border-amber-200" alt="profile" />` : ''}
+                        <button onclick="window.executeLogout()" class="text-xs text-gray-500 hover:text-red-500 transition-colors">Sign Out</button>
+                    </div>
+                `;
+                heroActionContainer.innerHTML = '';
+                missingActionContainer.innerHTML = `
+                    <button id="open-modal-btn" class="bg-red-600 text-white px-6 py-3 rounded-full font-bold hover:bg-red-700 transition-all shadow-lg flex items-center gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5"><path d="M12 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm-5 3c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm10 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm-5 6c-3.3 0-6 2.7-6 6v3h12v-3c0-3.3-2.7-6-6-6zm-7-2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm14 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z" /></svg>
+                        Report Missing Dog
+                    </button>
+                `;
+                
+                // Re-attach listener after dynamic injection
+                document.getElementById('open-modal-btn')?.addEventListener('click', () => {
+                    document.getElementById('missing-modal').classList.remove('hidden');
+                });
+
+            } else {
+                authContainer.innerHTML = `
+                    <button onclick="window.executeLogin()" class="bg-amber-600 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-amber-700 transition-colors">
+                        <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/action/google.svg" class="w-4 h-4 bg-white rounded-sm p-0.5" alt="google" />
+                        Sign In
+                    </button>
+                `;
+                heroActionContainer.innerHTML = `
+                    <button onclick="window.executeLogin()" class="bg-white text-amber-700 px-8 py-3 rounded-full font-bold shadow-xl hover:bg-amber-50 transition-all scale-100 hover:scale-105">
+                        Join Our Community to Help
+                    </button>
+                `;
+                missingActionContainer.innerHTML = `
+                    <button onclick="window.executeLogin()" class="bg-white text-red-600 border border-red-200 px-6 py-3 rounded-full font-bold hover:bg-red-50 transition-all shadow-md">
+                        Login to Report a Lost Dog
+                    </button>
+                `;
+            }
+        }
+
+        function renderAdoptGrid() {
+            const grid = document.getElementById('adopt-grid');
+            const filtered = adoptableDogs.filter(d => 
+                d.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                d.breed.toLowerCase().includes(searchTerm.toLowerCase())
+            );
+
+            grid.innerHTML = filtered.map(dog => `
+                <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-lg transition-shadow flex flex-col">
+                    <img src="${dog.image}" class="h-56 w-full object-cover" alt="${dog.name}" />
+                    <div class="p-6 flex flex-col flex-grow">
+                        <div class="flex justify-between items-center mb-1">
+                            <h3 class="text-xl font-bold">${dog.name}</h3>
+                            <span class="text-xs bg-amber-100 text-amber-800 px-2 py-1 rounded-full font-bold">${dog.age}</span>
+                        </div>
+                        <p class="text-amber-600 text-sm font-semibold mb-4">${dog.breed}</p>
+                        <p class="text-gray-600 text-sm line-clamp-2 mb-6 flex-grow">${dog.description}</p>
+                        <button onclick="${(!currentUser || currentUser.isAnonymous) ? 'window.executeLogin()' : ''}" class="w-full py-3 bg-amber-600 text-white rounded-xl font-bold hover:bg-amber-700 transition-colors">
+                            ${(currentUser && !currentUser.isAnonymous) ? "Apply to Adopt" : "Login to Adopt"}
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function renderMissingGrid() {
+            const grid = document.getElementById('missing-grid');
+            grid.innerHTML = missingDogs.map(dog => `
+                <div class="bg-white p-4 rounded-3xl shadow-sm border border-red-100 hover:scale-[1.02] transition-transform">
+                    <img src="${dog.image}" class="w-full h-40 object-cover rounded-2xl mb-4" alt="missing" />
+                    <h4 class="font-bold text-lg">${dog.name}</h4>
+                    <p class="text-xs text-red-500 font-bold uppercase tracking-widest mb-2">Lost: ${dog.breed}</p>
+                    <p class="text-sm text-gray-500 flex items-center gap-1 mb-1">📍 ${dog.lastSeen}</p>
+                    <p class="text-[10px] text-gray-400">Reporter: ${dog.owner}</p>
+                </div>
+            `).join('');
+        }
+
+        // --- Event Listeners ---
+        document.getElementById('search-input').addEventListener('input', (e) => {
+            searchTerm = e.target.value;
+            renderAdoptGrid();
+        });
+
+        // Modal interactions
+        const modal = document.getElementById('missing-modal');
+        document.getElementById('close-modal').addEventListener('click', () => modal.classList.add('hidden'));
+        
+        document.getElementById('missing-form').addEventListener('submit', (e) => {
+            e.preventDefault();
+            const displayName = currentUser?.displayName || `User_${currentUser?.uid?.substring(0,4) || 'Anon'}`;
+            
+            const newDog = {
+                id: Date.now(),
+                name: document.getElementById('missing-name').value,
+                breed: document.getElementById('missing-breed').value,
+                lastSeen: document.getElementById('missing-lastseen').value,
+                image: "https://images.unsplash.com/photo-1583511655857-d19b40a7a54e?auto=format&fit=crop&w=500&q=80",
+                owner: displayName
+            };
+            
+            missingDogs.unshift(newDog);
+            renderMissingGrid();
+            modal.classList.add('hidden');
+            e.target.reset();
+        });
+
+        // --- Initial Renders ---
+        renderAuthUI();
+        renderAdoptGrid();
+        renderMissingGrid();
+
+        // --- Chatbot Logic ---
+        let chatMessages = [
+            { role: 'model', text: "Hi! I'm PawsBot 🐾. I'm an expert in dog breeds, cross-breeding genetics, and canine health. Ask me about healthy/unhealthy foods, behavior tips, or finding local pet shops!" }
+        ];
+        let isChatOpen = false;
+        let isChatLoading = false;
+        const chatApiKey = ""; 
+
+        const quickPrompts = [
+            "Breed cross-breeding info",
+            "Toxic foods list",
+            "Healthy puppy diet",
+            "Aggressive behavior tips",
+            "Find nearby pet shops"
+        ];
+
+        // Chat UI Elements
+        const chatWindow = document.getElementById('chat-window');
+        const chatMessagesContainer = document.getElementById('chat-messages');
+        const chatQuickPromptsContainer = document.getElementById('chat-quick-prompts');
+        const chatInput = document.getElementById('chat-input');
+        const chatIconOpen = document.getElementById('chat-icon-open');
+        const chatIconClose = document.getElementById('chat-icon-close');
+
+        function toggleChat() {
+            isChatOpen = !isChatOpen;
+            if(isChatOpen) {
+                chatWindow.classList.remove('hidden');
+                chatIconOpen.classList.add('hidden');
+                chatIconClose.classList.remove('hidden');
+                scrollToBottom();
+            } else {
+                chatWindow.classList.add('hidden');
+                chatIconOpen.classList.remove('hidden');
+                chatIconClose.classList.add('hidden');
+            }
+        }
+
+        document.getElementById('toggle-chat').addEventListener('click', toggleChat);
+        document.getElementById('close-chat').addEventListener('click', toggleChat);
+
+        function formatText(text) {
+            const boldRegex = /\*\*(.*?)\*\*/g;
+            const parts = text.split(boldRegex);
+            return parts.map((part, index) => {
+                if (index % 2 === 1) return `<strong class="font-bold">${part}</strong>`;
+                return `<span>${part}</span>`;
+            }).join('');
+        }
+
+        function scrollToBottom() {
+            chatMessagesContainer.scrollTop = chatMessagesContainer.scrollHeight;
+        }
+
+        // Make this global to be called by inline buttons
+        window.triggerChatPrompt = (promptText) => {
+            handleChatSend(promptText);
+        }
+
+        function renderChatUI() {
+            chatMessagesContainer.innerHTML = chatMessages.map(msg => `
+                <div class="max-w-[85%] p-3 rounded-2xl text-sm ${msg.role === 'user' ? 'bg-amber-600 text-white self-end' : 'bg-white text-gray-800 border border-gray-100 self-start shadow-sm'}">
+                    ${formatText(msg.text)}
+                </div>
+            `).join('');
+
+            if(isChatLoading) {
+                chatMessagesContainer.innerHTML += `<div class="text-xs text-gray-400 italic">PawsBot is fetching information...</div>`;
+            }
+            
+            chatQuickPromptsContainer.innerHTML = '';
+            if (!isChatLoading && chatMessages.length < 5) {
+                chatQuickPromptsContainer.innerHTML = quickPrompts.map(p => `
+                    <button onclick="window.triggerChatPrompt('${p}')" class="text-[10px] bg-gray-100 px-2 py-1 rounded-full hover:bg-amber-100 transition-colors">
+                        ${p}
+                    </button>
+                `).join('');
+            }
+            scrollToBottom();
+        }
+
+        async function handleChatSend(textToProcess) {
+            if (!textToProcess.trim() || isChatLoading) return;
+            const userText = textToProcess.trim();
+            chatInput.value = '';
+            chatMessages.push({ role: 'user', text: userText });
+            isChatLoading = true;
+            renderChatUI();
+
+            try {
+                const systemPrompt = `You are PawsBot, the lead canine expert for 'Paws & Hearts Rescue'. 
+                Expertise Areas:
+                1. Breed Knowledge: You can explain what happens when crossing breeds.
+                2. Health & Nutrition: Explicitly list HEALTHY foods and UNHEALTHY/TOXIC foods.
+                3. Behavior & Training: Explain body language and precautions for dealing with nervous dogs.
+                4. Local Search: Find pet shops, vets, and adoption centers when a location is provided.
+                Always be encouraging but professional. Always suggest consulting a vet for medical emergencies.`;
+                
+                const apiContents = chatMessages.map(msg => ({
+                    role: msg.role === 'user' ? 'user' : 'model',
+                    parts: [{ text: msg.text }]
+                }));
+
+                const payload = {
+                    contents: apiContents,
+                    systemInstruction: { parts: [{ text: systemPrompt }] },
+                    tools: [{ google_search: {} }] 
+                };
+
+                const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${chatApiKey}`;
+                const delays = [1000, 2000, 4000, 8000, 16000];
+                
+                let response;
+                let data;
+                let success = false;
+
+                for (let i = 0; i <= delays.length; i++) {
+                    try {
+                        response = await fetch(url, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
+                        
+                        if (response.ok) {
+                            data = await response.json();
+                            success = true;
+                            break;
+                        } else if (i < delays.length) {
+                            await new Promise(res => setTimeout(res, delays[i]));
+                        }
+                    } catch (err) {
+                        if (i === delays.length) throw err;
+                        else await new Promise(res => setTimeout(res, delays[i]));
+                    }
+                }
+
+                if (!success || !data) throw new Error("Failed to fetch after retries");
+
+                const botReply = data.candidates?.[0]?.content?.parts?.[0]?.text || "I'm having a bit of trouble finding that info. Can you ask in a different way?";
+                chatMessages.push({ role: 'model', text: botReply });
+            } catch (error) {
+                chatMessages.push({ role: 'model', text: "I'm currently experiencing a connection error. Please try asking again in a moment." });
+            } finally {
+                isChatLoading = false;
+                renderChatUI();
+            }
+        }
+
+        document.getElementById('chat-form').addEventListener('submit', (e) => {
+            e.preventDefault();
+            handleChatSend(chatInput.value);
+        });
+
+        // Initialize Chat UI
+        renderChatUI();
+
+    </script>
+</body>
+</html>
