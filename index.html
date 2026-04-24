@@ -534,6 +534,7 @@
                 let response;
                 let data;
                 let success = false;
+                let errorDetails = "Unknown Network Error";
 
                 for (let i = 0; i <= delays.length; i++) {
                     try {
@@ -548,27 +549,35 @@
                             success = true;
                             break;
                         } else {
-                            const errorText = await response.text();
-                            // This line will print the exact issue to your browser console (e.g., 400 API Key not valid)
-                            console.error(`Gemini API Error (Attempt ${i + 1}):`, response.status, errorText);
+                            const errorResponse = await response.json();
+                            // Capture the exact error message provided by Google API
+                            errorDetails = errorResponse.error?.message || `HTTP Status: ${response.status}`;
+                            console.error(`Gemini API Error (Attempt ${i + 1}):`, response.status, errorDetails);
                             if (i < delays.length) {
                                 await new Promise(res => setTimeout(res, delays[i]));
                             }
                         }
                     } catch (err) {
+                        errorDetails = err.message;
                         console.error(`Network Error (Attempt ${i + 1}):`, err);
                         if (i === delays.length) throw err;
                         else await new Promise(res => setTimeout(res, delays[i]));
                     }
                 }
 
-                if (!success || !data) throw new Error("Failed to fetch after retries. Check console for details.");
+                if (!success || !data) {
+                    throw new Error(`API Error: ${errorDetails}`);
+                }
 
                 const botReply = data.candidates?.[0]?.content?.parts?.[0]?.text || "I'm having a bit of trouble finding that info. Can you ask in a different way?";
                 chatMessages.push({ role: 'model', text: botReply });
             } catch (error) {
                 console.error("Chatbot final error:", error);
-                chatMessages.push({ role: 'model', text: "I'm currently experiencing a connection error. Please verify the API key is configured and try again." });
+                // Display the exact Google error right in the chat interface!
+                chatMessages.push({ 
+                    role: 'model', 
+                    text: `Connection failed: **${error.message}**.` 
+                });
             } finally {
                 isChatLoading = false;
                 renderChatUI();
