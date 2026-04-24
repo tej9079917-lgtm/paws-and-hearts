@@ -1,0 +1,490 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { initializeApp } from "firebase/app";
+import { getAnalytics } from "firebase/analytics";
+import { 
+  getAuth, 
+  signInWithPopup, 
+  GoogleAuthProvider, 
+  onAuthStateChanged, 
+  signOut 
+} from "firebase/auth";
+
+// Your web app's Firebase configuration
+const firebaseConfig = {
+  apiKey: "AIzaSyBNCFLd_CEqSOiq-7y1ybLty8FFxcZfmvM",
+  authDomain: "paws-and-hearts-b5e2a.firebaseapp.com",
+  projectId: "paws-and-hearts-b5e2a",
+  storageBucket: "paws-and-hearts-b5e2a.firebasestorage.app",
+  messagingSenderId: "471525072471",
+  appId: "1:471525072471:web:a6ca461dbd1a3f1079cd12",
+  measurementId: "G-YG1YHPPWJL"
+};
+
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const googleProvider = new GoogleAuthProvider();
+const analytics = typeof window !== 'undefined' ? getAnalytics(app) : null;
+
+// --- SVG Icons ---
+const PawIcon = ({ className = "w-6 h-6" }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className={className}>
+    <path d="M12 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm-5 3c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm10 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm-5 6c-3.3 0-6 2.7-6 6v3h12v-3c0-3.3-2.7-6-6-6zm-7-2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm14 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z" />
+  </svg>
+);
+
+const MessageIcon = ({ className = "w-6 h-6" }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 01-2.555-.337A5.972 5.972 0 015.41 20.97a5.969 5.969 0 01-.474-.065 4.48 4.48 0 00.978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25z" />
+  </svg>
+);
+
+const CloseIcon = ({ className = "w-6 h-6" }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+  </svg>
+);
+
+const SendIcon = ({ className = "w-6 h-6" }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
+  </svg>
+);
+
+// --- Mock Data ---
+const adoptableDogs = [
+  {
+    id: 1,
+    name: "Buddy",
+    breed: "Golden Retriever Mix",
+    age: "2 years",
+    image: "https://images.unsplash.com/photo-1552053831-71594a27632d?auto=format&fit=crop&w=500&q=80",
+    description: "Friendly, energetic, and loves to play fetch. Great with kids!"
+  },
+  {
+    id: 2,
+    name: "Luna",
+    breed: "Husky",
+    age: "1 year",
+    image: "https://images.unsplash.com/photo-1605568427561-40dd23c2acea?auto=format&fit=crop&w=500&q=80",
+    description: "A beautiful, vocal girl who needs an active family and a big yard."
+  },
+  {
+    id: 3,
+    name: "Max",
+    breed: "Beagle",
+    age: "4 years",
+    image: "https://images.unsplash.com/photo-1537151608804-ea2f142b406b?auto=format&fit=crop&w=500&q=80",
+    description: "Calm, sweet, and loves sniffing around on long, slow walks."
+  }
+];
+
+const initialMissingDogs = [
+  {
+    id: 101,
+    name: "Charlie",
+    breed: "Labrador",
+    lastSeen: "Central Park, NY",
+    image: "https://images.unsplash.com/photo-1591768575198-88dac53fbd0a?auto=format&fit=crop&w=500&q=80",
+    owner: "Jane Doe"
+  }
+];
+
+// --- Chatbot Component ---
+const Chatbot = () => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [messages, setMessages] = useState([
+    { role: 'model', text: "Hi! I'm PawsBot 🐾. I'm an expert in dog breeds, cross-breeding genetics, and canine health. Ask me about healthy/unhealthy foods, behavior tips, or finding local pet shops!" }
+  ]);
+  const [inputText, setInputText] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const messagesEndRef = useRef(null);
+
+  const quickPrompts = [
+    "Breed cross-breeding info",
+    "Toxic foods list",
+    "Healthy puppy diet",
+    "Aggressive behavior tips",
+    "Find nearby pet shops"
+  ];
+
+  const apiKey = ""; 
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages, isOpen]);
+
+  const formatText = (text) => {
+    const boldRegex = /\*\*(.*?)\*\*/g;
+    const parts = text.split(boldRegex);
+    return parts.map((part, index) => {
+      if (index % 2 === 1) return <strong key={index} className="font-bold">{part}</strong>;
+      return <span key={index}>{part}</span>;
+    });
+  };
+
+  const handleSendTrigger = async (textToProcess) => {
+    if (!textToProcess.trim() || isLoading) return;
+    const userText = textToProcess.trim();
+    setInputText('');
+    const newMessages = [...messages, { role: 'user', text: userText }];
+    setMessages(newMessages);
+    setIsLoading(true);
+
+    try {
+      const systemPrompt = `You are PawsBot, the lead canine expert for 'Paws & Hearts Rescue'. 
+      Expertise Areas:
+      1. Breed Knowledge: You can explain what happens when crossing breeds (e.g., crossing a Poodle and a Golden Retriever results in a Goldendoodle). Explain coat types, sizes, and temperaments.
+      2. Health & Nutrition: Explicitly list HEALTHY foods (carrots, blueberries, cooked chicken) and UNHEALTHY/TOXIC foods (chocolate, grapes, onions, xylitol).
+      3. Behavior & Training: Explain body language (tail positions, ear pinning) and precautions for dealing with nervous or aggressive dogs.
+      4. Local Search: Find pet shops, vets, and adoption centers when a location is provided.
+      Always be encouraging but professional. Always suggest consulting a vet for medical emergencies.`;
+      
+      const apiContents = newMessages.map(msg => ({
+        role: msg.role === 'user' ? 'user' : 'model',
+        parts: [{ text: msg.text }]
+      }));
+
+      const payload = {
+        contents: apiContents,
+        systemInstruction: { parts: [{ text: systemPrompt }] },
+        tools: [{ google_search: {} }] 
+      };
+
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+
+      let response;
+      const delays = [1000, 2000, 4000];
+      for (let i = 0; i < 3; i++) {
+        try {
+          response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+          if (response.ok) break;
+        } catch (err) {
+          if (i === 2) throw err;
+          await new Promise(res => setTimeout(res, delays[i]));
+        }
+      }
+
+      const data = await response.json();
+      const botReply = data.candidates?.[0]?.content?.parts?.[0]?.text || "I'm having a bit of trouble finding that info. Can you ask in a different way?";
+      setMessages(prev => [...prev, { role: 'model', text: botReply }]);
+    } catch (error) {
+      setMessages(prev => [...prev, { role: 'model', text: "Connection error. Please try again." }]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed bottom-4 right-4 z-50 flex flex-col items-end">
+      {isOpen && (
+        <div className="bg-white rounded-2xl shadow-2xl border border-gray-200 w-[350px] max-w-[calc(100vw-2rem)] h-[560px] mb-4 flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom-4">
+          <div className="bg-amber-600 text-white p-4 flex justify-between items-center">
+            <div className="flex items-center gap-2">
+              <PawIcon className="w-5 h-5" />
+              <h3 className="font-semibold">PawsBot Expert</h3>
+            </div>
+            <button onClick={() => setIsOpen(false)} className="hover:opacity-75 transition-opacity"><CloseIcon /></button>
+          </div>
+          <div className="flex-1 overflow-y-auto p-4 bg-amber-50/30 flex flex-col gap-3">
+            {messages.map((msg, idx) => (
+              <div key={idx} className={`max-w-[85%] p-3 rounded-2xl text-sm ${
+                msg.role === 'user' ? 'bg-amber-600 text-white self-end' : 'bg-white text-gray-800 border border-gray-100 self-start'
+              }`}>
+                {formatText(msg.text)}
+              </div>
+            ))}
+            {isLoading && <div className="text-xs text-gray-400 italic">PawsBot is thinking...</div>}
+            <div ref={messagesEndRef} />
+          </div>
+          {!isLoading && messages.length < 5 && (
+            <div className="px-3 py-2 bg-white flex flex-wrap gap-1.5 border-t border-gray-50">
+              {quickPrompts.map((p, i) => (
+                <button key={i} onClick={() => handleSendTrigger(p)} className="text-[10px] bg-gray-100 px-2 py-1 rounded-full hover:bg-amber-100 transition-colors">
+                  {p}
+                </button>
+              ))}
+            </div>
+          )}
+          <form onSubmit={(e) => { e.preventDefault(); handleSendTrigger(inputText); }} className="p-3 border-t">
+            <div className="relative">
+              <input value={inputText} onChange={(e) => setInputText(e.target.value)} placeholder="Ask about breeds or food..." className="w-full bg-gray-100 rounded-full py-2 pl-4 pr-10 text-sm focus:ring-2 focus:ring-amber-500 outline-none" />
+              <button type="submit" className="absolute right-1 top-1 p-1.5 bg-amber-600 text-white rounded-full"><SendIcon className="w-4 h-4" /></button>
+            </div>
+          </form>
+        </div>
+      )}
+      <button onClick={() => setIsOpen(!isOpen)} className="bg-amber-600 text-white p-4 rounded-full shadow-xl hover:scale-105 transition-transform">
+        <MessageIcon className="w-7 h-7" />
+      </button>
+    </div>
+  );
+};
+
+// --- Main App Component ---
+export default function App() {
+  const [searchTerm, setSearchTerm] = useState('');
+  const [user, setUser] = useState(null);
+  const [missingDogs, setMissingDogs] = useState(initialMissingDogs);
+  const [showMissingModal, setShowMissingModal] = useState(false);
+  const [newMissing, setNewMissing] = useState({ name: '', breed: '', lastSeen: '' });
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const handleLogin = async () => {
+    try {
+      await signInWithPopup(auth, googleProvider);
+    } catch (error) {
+      console.error("Login failed:", error);
+    }
+  };
+
+  const handleLogout = () => signOut(auth);
+
+  const handleReportMissing = (e) => {
+    e.preventDefault();
+    if (!user) return;
+    const dog = {
+      ...newMissing,
+      id: Date.now(),
+      image: "https://images.unsplash.com/photo-1583511655857-d19b40a7a54e?auto=format&fit=crop&w=500&q=80",
+      owner: user.displayName
+    };
+    setMissingDogs([dog, ...missingDogs]);
+    setNewMissing({ name: '', breed: '', lastSeen: '' });
+    setShowMissingModal(false);
+  };
+
+  const filteredDogs = adoptableDogs.filter(dog => 
+    dog.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+    dog.breed.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  return (
+    <div className="min-h-screen bg-gray-50 text-gray-800">
+      
+      {/* Navigation */}
+      <nav className="bg-white shadow-sm sticky top-0 z-40">
+        <div className="max-w-6xl mx-auto px-4 py-4 flex justify-between items-center">
+          <div className="flex items-center gap-2 text-amber-600">
+            <PawIcon className="w-8 h-8" />
+            <span className="font-bold text-2xl tracking-tight hidden sm:inline">Paws & Hearts</span>
+          </div>
+          <div className="flex gap-4 items-center">
+            <a href="#adopt" className="text-gray-600 hover:text-amber-600 text-sm font-medium">Adopt</a>
+            <a href="#missing" className="text-gray-600 hover:text-amber-600 text-sm font-medium">Missing</a>
+            {user ? (
+              <div className="flex items-center gap-3">
+                <img src={user.photoURL} className="w-8 h-8 rounded-full border border-amber-200" alt="profile" />
+                <button onClick={handleLogout} className="text-xs text-gray-500 hover:text-red-500">Sign Out</button>
+              </div>
+            ) : (
+              <button onClick={handleLogin} className="bg-amber-600 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-amber-700 transition-colors">
+                <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/action/google.svg" className="w-4 h-4 bg-white rounded-sm p-0.5" alt="google" />
+                Sign In
+              </button>
+            )}
+          </div>
+        </div>
+      </nav>
+
+      {/* Hero Section */}
+      <header className="bg-amber-700 text-white relative py-20 overflow-hidden">
+        <div className="absolute inset-0 opacity-20"><img src="https://images.unsplash.com/photo-1541599540903-216a46cc1ad6?auto=format&fit=crop&w=1600&q=80" className="w-full h-full object-cover" alt="pattern" /></div>
+        <div className="relative z-10 max-w-4xl mx-auto px-4 text-center">
+          <h1 className="text-5xl font-extrabold mb-6">Find Your New Best Friend</h1>
+          <p className="text-xl text-amber-50 mb-8">Securely login to start the adoption process or help the community find missing pets.</p>
+          {!user && (
+            <button onClick={handleLogin} className="bg-white text-amber-700 px-8 py-3 rounded-full font-bold shadow-xl hover:bg-amber-50 transition-all scale-110">
+              Join Our Community to Help
+            </button>
+          )}
+        </div>
+      </header>
+
+      <main className="max-w-6xl mx-auto px-4 py-16 space-y-32">
+        
+        {/* Adopt Section */}
+        <section id="adopt">
+          <div className="flex flex-col md:flex-row justify-between items-end mb-10 gap-6">
+            <div>
+              <h2 className="text-4xl font-bold text-gray-900">Dogs Seeking Homes</h2>
+              <p className="text-gray-500 mt-2">Browse our available rescues and start an application.</p>
+            </div>
+            <input 
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Search breeds..." 
+              className="px-5 py-3 rounded-full border bg-white w-full md:w-80 shadow-sm focus:ring-2 focus:ring-amber-500 outline-none"
+            />
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            {filteredDogs.map(dog => (
+              <div key={dog.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-lg transition-shadow">
+                <img src={dog.image} className="h-56 w-full object-cover" alt={dog.name} />
+                <div className="p-6">
+                  <div className="flex justify-between items-center mb-1">
+                    <h3 className="text-xl font-bold">{dog.name}</h3>
+                    <span className="text-xs bg-amber-100 text-amber-800 px-2 py-1 rounded-full font-bold">{dog.age}</span>
+                  </div>
+                  <p className="text-amber-600 text-sm font-semibold mb-4">{dog.breed}</p>
+                  <p className="text-gray-600 text-sm line-clamp-2 mb-6">{dog.description}</p>
+                  <button onClick={!user ? handleLogin : () => {}} className="w-full py-3 bg-amber-600 text-white rounded-xl font-bold hover:bg-amber-700 transition-colors">
+                    {user ? "Apply to Adopt" : "Login to Adopt"}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        {/* Missing Dogs Section */}
+        <section id="missing" className="bg-red-50 rounded-[2.5rem] p-8 md:p-12 relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-red-100 rounded-bl-full opacity-50"></div>
+          <div className="flex flex-col md:flex-row justify-between items-center mb-12 gap-6">
+            <div>
+              <h2 className="text-4xl font-bold text-gray-900">Missing Pets</h2>
+              <p className="text-gray-600 mt-2">Help reunite these furry friends with their families.</p>
+            </div>
+            {user ? (
+              <button onClick={() => setShowMissingModal(true)} className="bg-red-600 text-white px-6 py-3 rounded-full font-bold hover:bg-red-700 transition-all shadow-lg flex items-center gap-2">
+                <PawIcon className="w-5 h-5" /> Report Missing Dog
+              </button>
+            ) : (
+              <button onClick={handleLogin} className="bg-white text-red-600 border border-red-200 px-6 py-3 rounded-full font-bold hover:bg-red-50 transition-all shadow-md">
+                Login to Report a Lost Dog
+              </button>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            {missingDogs.map(dog => (
+              <div key={dog.id} className="bg-white p-4 rounded-3xl shadow-sm border border-red-100 hover:scale-[1.02] transition-transform">
+                <img src={dog.image} className="w-full h-40 object-cover rounded-2xl mb-4" alt="missing" />
+                <h4 className="font-bold text-lg">{dog.name}</h4>
+                <p className="text-xs text-red-500 font-bold uppercase tracking-widest mb-2">Lost: {dog.breed}</p>
+                <p className="text-sm text-gray-500 flex items-center gap-1 mb-1">📍 {dog.lastSeen}</p>
+                <p className="text-[10px] text-gray-400">Owner: {dog.owner}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        {/* Breed Info Visual Section */}
+        <section className="grid md:grid-cols-2 gap-12 items-center">
+          <div className="space-y-6">
+            <h2 className="text-4xl font-bold">Breed Wisdom & Care</h2>
+            <p className="text-gray-600 leading-relaxed text-lg">
+              Understanding your dog's genetics and nutritional needs is key to a long, happy life. 
+              Our AI expert, **PawsBot**, is specifically trained to help with:
+            </p>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="p-4 bg-white rounded-2xl border border-gray-100 shadow-sm">
+                <span className="text-2xl">🧬</span>
+                <h5 className="font-bold mt-2">Cross-Breeding</h5>
+                <p className="text-xs text-gray-400">Learn about hybrid traits.</p>
+              </div>
+              <div className="p-4 bg-white rounded-2xl border border-gray-100 shadow-sm">
+                <span className="text-2xl">🥗</span>
+                <h5 className="font-bold mt-2">Toxic Food Lists</h5>
+                <p className="text-xs text-gray-400">Keep dangerous foods away.</p>
+              </div>
+              <div className="p-4 bg-white rounded-2xl border border-gray-100 shadow-sm">
+                <span className="text-2xl">🧠</span>
+                <h5 className="font-bold mt-2">Behavior Prep</h5>
+                <p className="text-xs text-gray-400">Safety precautions & signs.</p>
+              </div>
+              <div className="p-4 bg-white rounded-2xl border border-gray-100 shadow-sm">
+                <span className="text-2xl">🏠</span>
+                <h5 className="font-bold mt-2">Local Shops</h5>
+                <p className="text-xs text-gray-400">Find vetted supply stores.</p>
+              </div>
+            </div>
+          </div>
+          <div className="bg-amber-100 rounded-[3rem] p-4 rotate-2">
+            <img 
+              src="https://images.unsplash.com/photo-1517849845537-4d257902454a?auto=format&fit=crop&w=800&q=80" 
+              className="rounded-[2.5rem] shadow-2xl -rotate-2" 
+              alt="Education dog" 
+            />
+          </div>
+        </section>
+
+      </main>
+
+      {/* Missing Dog Modal */}
+      {showMissingModal && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="bg-white rounded-[2rem] w-full max-w-md p-8 shadow-2xl">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-2xl font-bold">Report Missing Pet</h3>
+              <button onClick={() => setShowMissingModal(false)}><CloseIcon className="text-gray-400" /></button>
+            </div>
+            <form onSubmit={handleReportMissing} className="space-y-4">
+              <div>
+                <label className="text-xs font-bold uppercase text-gray-500 block mb-1 ml-1">Dog's Name</label>
+                <input required value={newMissing.name} onChange={e => setNewMissing({...newMissing, name: e.target.value})} className="w-full px-4 py-3 bg-gray-50 rounded-xl border-none focus:ring-2 focus:ring-red-500" placeholder="e.g. Toby" />
+              </div>
+              <div>
+                <label className="text-xs font-bold uppercase text-gray-500 block mb-1 ml-1">Breed</label>
+                <input required value={newMissing.breed} onChange={e => setNewMissing({...newMissing, breed: e.target.value})} className="w-full px-4 py-3 bg-gray-50 rounded-xl border-none focus:ring-2 focus:ring-red-500" placeholder="e.g. Beagle" />
+              </div>
+              <div>
+                <label className="text-xs font-bold uppercase text-gray-500 block mb-1 ml-1">Last Seen At</label>
+                <input required value={newMissing.lastSeen} onChange={e => setNewMissing({...newMissing, lastSeen: e.target.value})} className="w-full px-4 py-3 bg-gray-50 rounded-xl border-none focus:ring-2 focus:ring-red-500" placeholder="e.g. Near West Park" />
+              </div>
+              <button type="submit" className="w-full py-4 bg-red-600 text-white rounded-xl font-bold text-lg hover:bg-red-700 transition-colors shadow-lg shadow-red-200 mt-4">
+                Post Alert
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Footer */}
+      <footer className="bg-gray-900 text-gray-400 py-16">
+        <div className="max-w-6xl mx-auto px-4 grid md:grid-cols-4 gap-12">
+          <div className="col-span-1 md:col-span-2">
+            <div className="flex items-center gap-2 text-white mb-6">
+              <PawIcon className="w-8 h-8" />
+              <span className="font-bold text-2xl">Paws & Hearts</span>
+            </div>
+            <p className="max-w-sm">Saving and rehoming dogs since 2018. We believe every life is precious and every tail deserves to wag in a happy home.</p>
+          </div>
+          <div>
+            <h4 className="text-white font-bold mb-4 uppercase tracking-widest text-xs">Navigation</h4>
+            <ul className="space-y-3 text-sm">
+              <li><a href="#adopt" className="hover:text-amber-500 transition-colors">Available Adoptions</a></li>
+              <li><a href="#missing" className="hover:text-amber-500 transition-colors">Missing Registry</a></li>
+              <li><a href="#" className="hover:text-amber-500 transition-colors">Terms of Service</a></li>
+            </ul>
+          </div>
+          <div>
+            <h4 className="text-white font-bold mb-4 uppercase tracking-widest text-xs">Community</h4>
+            <p className="text-sm">Join 1,200+ other dog lovers receiving our monthly rescue updates.</p>
+            <div className="mt-4 flex gap-2">
+              <input placeholder="Email" className="bg-gray-800 border-none rounded-lg px-3 py-2 text-xs w-full focus:ring-1 focus:ring-amber-500" />
+              <button className="bg-amber-600 text-white p-2 rounded-lg text-xs font-bold">Join</button>
+            </div>
+          </div>
+        </div>
+      </footer>
+
+      {/* Chatbot */}
+      <Chatbot />
+    </div>
+  );
+}
